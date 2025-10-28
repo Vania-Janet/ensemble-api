@@ -1,26 +1,16 @@
-main
-
-
 from fastapi import FastAPI
 from pydantic import BaseModel
 import joblib
 import numpy as np
 import datetime
-
-import numpy as np
 from typing import List, Optional, Union
 from sklearn.tree import DecisionTreeClassifier
 from collections import Counter
-from pathlib import Path
-import sys
-import types
+
 
 class SimpleRandomForest:
     """
     Random Forest 'desde cero' usando DecisionTreeClassifier como base.
-    - Bootstrap por árbol                                                 
-    - Submuestreo aleatorio de features (max_features)
-    - Votación mayoritaria en predict
     """
     def __init__(
         self,
@@ -74,37 +64,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- Ensure custom class is available for unpickling -----------------------
-# If the model was trained/pickled in a notebook or as __main__.SimpleRandomForest
-# the unpickler will try to resolve that name on the `__main__` module. Make
-# sure the class is present there before calling joblib.load.
-if "__main__" not in sys.modules:
-    sys.modules["__main__"] = types.ModuleType("__main__")
-setattr(sys.modules["__main__"], "SimpleRandomForest", SimpleRandomForest)
-
-# Carga del modelo entrenado (ruta robusta)
-_base = Path(__file__).resolve().parent
-_candidates = [
-    _base / "model" / "model.pkl",       # app/model/model.pkl
-    _base / "model.pkl",                 # app/model.pkl
-    _base.parent / "model" / "model.pkl", # ../model/model.pkl (repo structure)
-    _base.parent / "model.pkl",          # ../model.pkl
-]
-
-# Look for model.pkl in candidate locations
-MODEL_PATH = next((p for p in _candidates if p.exists()), None)
-if MODEL_PATH is None:
-    paths = "\n  ".join(str(p) for p in _candidates)
-    raise RuntimeError(
-        f"Could not find model.pkl in any location:\n  {paths}\n"
-        "Please ensure model.pkl exists in one of these locations."
-    )
-
-try:
-    model = joblib.load(str(MODEL_PATH))
-    print(f"Loaded model from: {MODEL_PATH}")
-except Exception as e:
-    raise RuntimeError(f"Failed to load model from {MODEL_PATH}: {e}") from e
+# Cargar el bundle completo
+bundle = joblib.load("./model/model.pkl")
+model = bundle["model"]  # ⬅️ Extrae el modelo del diccionario
+feature_names = bundle.get("feature_names", [])
+class_names = bundle.get("class_names", ["setosa", "versicolor", "virginica"])
 
 # Clase de entrada para predicción
 class Features(BaseModel):
@@ -127,14 +91,15 @@ def info():
     Devuelve metadatos del modelo y la API.
     """
     return {
-        "model_name": "Ensemble Classifier",
+        "model_name": "SimpleRandomForest",
         "author": "Vania Janet Raya Rios",
         "version": "1.0.0",
         "description": "Modelo de ensemble entrenado en scikit-learn y desplegado en Render",
         "framework": "FastAPI",
-        "last_update": datetime.datetime.fromtimestamp(
-            int(datetime.datetime.now().timestamp())
-        ).isoformat(),
+        "n_estimators": model.n_estimators,
+        "feature_names": feature_names,
+        "class_names": class_names,
+        "last_update": datetime.datetime.now().isoformat(),
     }
 
 
@@ -144,18 +109,12 @@ def predict(input: Features):
     Realiza una predicción con el modelo cargado.
     """
     X = np.array([input.features])
+    y_pred = model.predict(X)  # ⬅️ Ahora usa 'model' no 'model.rf'
     
-    # Handle both direct model objects and dict-wrapped models
-    predictor = model['model'] if isinstance(model, dict) else model
-    y_pred = predictor.predict(X)
-
-    # Get class names if available in the model bundle
-    class_names = model.get('class_names', ['setosa', 'versicolor', 'virginica'])
-    predicted_class = class_names[y_pred[0]]
+    # Mapear predicción a nombre de clase
+    predicted_class = class_names[int(y_pred[0])] if y_pred[0] < len(class_names) else str(y_pred[0])
     
     return {
-        "prediction": y_pred.tolist(),
-        "predicted_class": predicted_class,
-        "class_names": {i: name for i, name in enumerate(class_names)},
-        "model_path": str(MODEL_PATH)
+        "prediction": int(y_pred[0]),
+        "class_name": predicted_class
     }
