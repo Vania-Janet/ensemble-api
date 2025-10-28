@@ -1,0 +1,16 @@
+git init
+git add .
+git commit -m "Initial commit"
+git branch -M main
+git remote add origin https://github.com/<yourname>/ensemble-api.git
+git push -u origin main
+
+
+
+Ejemplo de uso
+Verificar salud →
+GET https://<tu-app>.onrender.com/health
+Ver información del modelo →
+GET https://<tu-app>.onrender.com/info
+Hacer una predicción →
+POST https://<tu-app>.onrender.com/predict
